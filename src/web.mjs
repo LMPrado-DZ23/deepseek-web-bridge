@@ -85,6 +85,15 @@ export class WebTransport {
   }
 
   async _openBrowser({ headed } = {}) {
+    // Se a execucao anterior morreu sem fechar o Chrome, o perfil continua
+    // travado ("Failed to create a ProcessSingleton") e todo turno falharia.
+    // Limpa apenas processos cujo --user-data-dir e' o perfil da ponte.
+    try {
+      const presos = closeStrayChrome(this.cfg.profileDir);
+      if (presos.length) log.warn(`fechei ${presos.length} Chrome(s) presos no perfil da ponte: ${presos.join(', ')}`);
+    } catch (err) {
+      log.warn(`nao consegui limpar Chrome preso no perfil: ${err.message}`);
+    }
     const headless = headed === undefined ? this.cfg.headless : !headed;
     const args = [
       '--disable-blink-features=AutomationControlled',
