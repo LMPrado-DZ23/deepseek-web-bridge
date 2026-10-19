@@ -10,48 +10,83 @@ Chrome dedicado e a expõe como um provider **compatível com a API da OpenAI**
 adaptada para o **DeepSeek Harness**: em vez de fingir ser o app do Codex, a
 ponte se registra como mais uma rota do plugin `@deepseek-ai/dsh-llm-pi-ai`.
 
-![status](https://img.shields.io/badge/status-funcional-brightgreen)
-![license](https://img.shields.io/badge/license-MIT-blue)
-![platform](https://img.shields.io/badge/platform-Windows%20x64-lightgrey)
-![node](https://img.shields.io/badge/node-%3E%3D20-informational)
+![Demo da ponte DeepSeek Web](assets/demo.gif)
+
+> Demonstração ilustrativa montada com **saídas reais** medidas em execução
+> (log da ponte, resposta `391` do chat web). O GIF é gerado por
+> `scripts/make-demo.mjs`; não é gravação de tela.
+
+[![Windows](https://img.shields.io/badge/Windows-install.cmd-0078D6?logo=windows&logoColor=white)](https://github.com/LMPrado-DZ23/deepseek-web-bridge/releases/latest/download/deepseek-web-bridge.zip)
+[![macOS](https://img.shields.io/badge/macOS-install.sh-000000?logo=apple&logoColor=white)](https://github.com/LMPrado-DZ23/deepseek-web-bridge/releases/latest/download/deepseek-web-bridge.tar.gz)
+[![Linux](https://img.shields.io/badge/Linux-install.sh-FCC624?logo=linux&logoColor=black)](https://github.com/LMPrado-DZ23/deepseek-web-bridge/releases/latest/download/deepseek-web-bridge.tar.gz)
+[![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![node](https://img.shields.io/badge/node-%3E%3D20-informational?logo=node.js)](https://nodejs.org/)
+
+**[Instalação](#instalação)** · **[Como usar](#usar)** · **[Arquitetura](docs/architecture.md)** · **[Troubleshooting](TROUBLESHOOTING.md)** · **[Releases](https://github.com/LMPrado-DZ23/deepseek-web-bridge/releases)**
 
 ---
 
-## Instalação em um comando (Windows)
+## Instalação
 
-Abra o PowerShell e rode:
+### Windows (PowerShell)
 
 ```powershell
 irm https://raw.githubusercontent.com/LMPrado-DZ23/deepseek-web-bridge/main/install.ps1 | iex
 ```
 
+Ou baixe o zip do [release mais recente](https://github.com/LMPrado-DZ23/deepseek-web-bridge/releases/latest),
+extraia e rode `install.cmd`.
+
+### macOS e Linux
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/LMPrado-DZ23/deepseek-web-bridge/main/install.sh | bash
+```
+
+Ou baixe o `.tar.gz` do [release mais recente](https://github.com/LMPrado-DZ23/deepseek-web-bridge/releases/latest),
+extraia e rode `bash install.sh`.
+
+### Clonando o repositório
+
+```bash
+git clone https://github.com/LMPrado-DZ23/deepseek-web-bridge
+cd deepseek-web-bridge
+# Windows
+powershell -ExecutionPolicy Bypass -File install.ps1
+# macOS/Linux
+bash install.sh
+```
+
 O instalador:
 
 1. confere **Node.js 20+** e o **Google Chrome**;
-2. baixa o projeto em `%LOCALAPPDATA%\deepseek-web-bridge` e instala as
-   dependências (`playwright-core`);
+2. baixa (quando necessário) e instala as dependências (`playwright-core`);
 3. abre o **Chrome normal** para o login único no `chat.deepseek.com`
    (Google/Apple funcionam nessa janela);
 4. registra o provider `deepseek-web` no perfil do DSH e grava a credencial de
    referência `DEEPSEEK_WEB_KEY` no cofre local.
 
-Se preferir clonar:
+Opções: Windows `-Profile`, `-Port`, `-NoLogin`, `-NoDsh`, `-DshHome`,
+`-InstallDir`; macOS/Linux `PROFILE`, `PORT`, `NO_LOGIN=1`, `NO_DSH=1`,
+`DSH_HOME`, `INSTALL_DIR`.
 
-```powershell
-git clone https://github.com/LMPrado-DZ23/deepseek-web-bridge
-cd deepseek-web-bridge
-powershell -ExecutionPolicy Bypass -File install.ps1
-```
+## Requisitos
 
-Opções úteis: `-Profile headless`, `-Port 8787`, `-NoLogin`, `-NoDsh`,
-`-DshHome <pasta>`, `-InstallDir <pasta>`.
+| item | versão / observação |
+| --- | --- |
+| Node.js | 20 ou superior |
+| Google Chrome | instalado (a ponte usa o Chrome real, `channel: 'chrome'`) |
+| Conta | uma conta em `https://chat.deepseek.com` |
+| DSH | qualquer perfil com o plugin `@deepseek-ai/dsh-llm-pi-ai` (padrão) |
+| Sistema | Windows x64, macOS (Intel/Apple Silicon) ou Linux x64 |
 
 ## Usar
 
 1. Suba a ponte e **deixe a janela aberta**:
 
    ```powershell
-   .\start.cmd
+   .\start.cmd        # Windows
+   ./start.sh         # macOS/Linux
    ```
 
 2. **Reinicie o DSH.** No seletor de modelos aparecem:
@@ -78,6 +113,8 @@ DSH ──HTTP──▶ 127.0.0.1:8787 (esta ponte) ──Playwright──▶ Ch
   modelo e **"Pesquisa inteligente" sempre desligada** (vinha ligada por padrão e
   adiciona latência).
 - Um turno por vez (fila serial), o que evita duas abas se atropelando.
+- Cada turno é registrado no log: modelo, tamanho do prompt/resposta, raciocínio,
+  ferramentas, origem do texto e tempo.
 
 ## Integração com o DSH
 
@@ -127,6 +164,7 @@ O app desktop **não** lê `%DSH_HOME%\.env` para `apiKeyEnv`; se o valor estive
 só lá, o turno falha com `MISSING_CREDENTIAL`.
 
 Arquivo pronto para colar: [`examples/dsh-deepseek-web.patch.yml`](examples/dsh-deepseek-web.patch.yml).
+Configurador manual: `node scripts/configure-dsh.mjs --profile desktop`.
 
 ## Endpoints
 
@@ -136,28 +174,26 @@ Arquivo pronto para colar: [`examples/dsh-deepseek-web.patch.yml`](examples/dsh-
 | `GET /v1/models` | catálogo compatível com OpenAI |
 | `POST /v1/chat/completions` | chat, com `stream: true` ou `false` |
 
-```powershell
-$body = @{
-  model = 'deepseek-web'
-  messages = @(@{ role = 'user'; content = 'Responda apenas: ok' })
-} | ConvertTo-Json -Depth 5
-
-Invoke-RestMethod http://127.0.0.1:8787/v1/chat/completions `
-  -Method Post -ContentType 'application/json' -Body $body
+```bash
+curl -s http://127.0.0.1:8787/v1/chat/completions \
+  -H 'content-type: application/json' \
+  -d '{"model":"deepseek-web","messages":[{"role":"user","content":"Responda apenas: ok"}]}'
 ```
 
 ## Comandos
 
 | comando | para que serve |
 | --- | --- |
-| `install.cmd` / `install.ps1` | instalação completa (deps + login + DSH) |
-| `start.cmd` | sobe o servidor local (`--port`, `--headed`, `--log-level debug`) |
-| `login.cmd` | login único no Chrome normal; `--auto` usa o Chrome automatizado |
+| `install.cmd` / `install.ps1` | instalação completa no Windows |
+| `install.sh` | instalação completa no macOS/Linux |
+| `start.cmd` / `./start.sh` | sobe o servidor local (`--port`, `--headed`, `--log-level debug`) |
+| `login.cmd` / `./login.sh` | login único no Chrome normal; `--auto` usa o Chrome automatizado |
 | `verify --wait` | espera a janela de login fechar e confere a sessão |
 | `diagnose --headed` | mede a página e mostra seletores OK/faltando |
 | `probe "texto" --mode think` | testa um turno direto no site, sem DSH |
 | `models` | lista modelos e o total de seletores DOM |
-| `npm test` | testes de unidade (parser do SSE, fila, prompt, servidor) |
+| `npm test` | testes de unidade (parser do SSE, fila, prompt, servidor, instalador) |
+| `npm run demo` | regenera `assets/demo.gif` |
 
 ## Limitações reais
 
@@ -168,10 +204,11 @@ Invoke-RestMethod http://127.0.0.1:8787/v1/chat/completions `
 - Latência de segundos a dezenas de segundos por turno (é um navegador).
 - Depende do DOM do site: se o DeepSeek mudar o layout, rode `diagnose` e ajuste
   `src/selectors.json`.
-- A sessão expira de vez em quando: rode `login.cmd` de novo.
+- A sessão expira de vez em quando: rode o login de novo.
 - Pode haver desafio anti-bot (PoW/WAF); nesse caso a resposta vem como
   `CHALLENGE`.
-- Windows x64 é a plataforma testada; o caminho de login nativo usa PowerShell.
+- O caminho de login nativo usa PowerShell no Windows, `ps` no macOS/Linux; é o
+  único trecho que muda por sistema.
 
 ## Aviso de uso
 
@@ -185,21 +222,22 @@ indicada.
 - Escuta apenas em `127.0.0.1` (loopback).
 - Sem token por padrão; defina `DSB_TOKEN` para exigir
   `Authorization: Bearer <token>`.
-- O perfil do Chrome guarda os cookies da sua conta em
-  `%LOCALAPPDATA%\dsh-deepseek-web\chrome-profile` — não copie essa pasta.
+- O perfil do Chrome guarda os cookies da sua conta fora do repositório
+  (`%LOCALAPPDATA%` no Windows, `~/Library/Application Support` no macOS,
+  `~/.local/share` no Linux) — não copie essa pasta.
 - A ponte não lê nenhuma credencial do DSH; `DEEPSEEK_WEB_KEY` é um marcador.
 
 Detalhes em [`SECURITY.md`](SECURITY.md).
 
 ## Problemas comuns
 
-- `MISSING_CREDENTIAL` → falta a referência no cofre (`refs:` do
-  `.credentials.yaml`) ou o provider está sem `apiKeyEnv`.
+- `MISSING_CREDENTIAL` → falta a referência no cofre ou o provider está sem
+  `apiKeyEnv`.
 - `Target page, context or browser has been closed` / Chrome `exit 21` → outro
   Chrome está usando o perfil da ponte; feche-o.
 - `COMPOSER_NOT_FOUND` / `site_layout_changed` → o layout mudou: rode
   `node src/index.mjs diagnose --headed` e atualize `src/selectors.json`.
-- Login do Google recusado → use `login.cmd` (Chrome normal), **nunca** o modo
+- Login do Google recusado → use o login nativo (Chrome normal), **nunca** o modo
   `--auto` para SSO.
 
 Mais em [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
@@ -209,25 +247,29 @@ Mais em [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
 ```
 src/        servidor HTTP, transporte Playwright, parser do SSE, prompt, config
 test/       testes de unidade (node --test)
-scripts/    diagnóstico: smoke do servidor, modos, stream, login, DOM
+scripts/    instalador do DSH, smoke do servidor, diagnóstico, gerador do GIF
 examples/   trecho de perfil do DSH
 docs/       arquitetura
-install.ps1 instalador (deps + login + integração com o DSH)
-start.cmd   sobe a ponte
-login.cmd   login único no Chrome normal
+assets/     demo.gif
+install.ps1 / install.cmd / start.cmd / login.cmd   (Windows)
+install.sh  / start.sh     / login.sh               (macOS/Linux)
 ```
 
 ## Desenvolvimento
 
-```powershell
+```bash
 npm install
-npm test                 # 48 testes
+npm test                        # 52 testes
 node scripts/smoke-server.mjs   # sobe a ponte, faz um turno real e derruba
+npm run demo                    # regenera assets/demo.gif
 ```
 
 Requisitos: Node 20+, Chrome instalado, sessão válida no `chat.deepseek.com`.
 As capturas reais de SSE usadas como oráculo estão em `data/sse-*.txt`
 (não versionadas por conterem conversa; veja `data/README.md`).
+
+CI roda `node --test` em Windows, macOS e Linux (Node 20 e 22) e valida o
+`install.ps1` — veja [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ## Diferenças em relação ao `codex-chatgpt-web`
 
@@ -238,6 +280,7 @@ As capturas reais de SSE usadas como oráculo estão em `data/sse-*.txt`
 | integração | catálogo do Codex / MCP | provider OpenAI-compatible do DSH |
 | token de API | não usa | não usa (marcador local) |
 | tool-calling | protocolo próprio | protocolo de texto (mesma ideia, mais simples) |
+| sistemas | Windows, macOS, Linux | Windows, macOS, Linux |
 
 ## Licença
 

@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        os: [windows-latest, macos-latest, ubuntu-latest]
         node: [20, 22]
     runs-on: ${{ matrix.os }}
     steps:
@@ -24,17 +24,26 @@ jobs:
       - run: node --check src/index.mjs
       - run: node --check src/server.mjs
       - run: node --check src/web.mjs
+      - run: node --check src/native-login.mjs
       - run: npm test
 
-  powershell:
-    runs-on: windows-latest
+  scripts:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Parser do instalador
-        shell: powershell
+      - name: Sintaxe dos scripts shell
+        run: |
+          bash -n install.sh
+          bash -n start.sh
+          bash -n login.sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Parser do instalador PowerShell (via pwsh)
+        shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile("$PWD\install.ps1", [ref]$null, [ref]$errors) | Out-Null
+          [System.Management.Automation.Language.Parser]::ParseFile("$PWD/install.ps1", [ref]$null, [ref]$errors) | Out-Null
           if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
           Write-Host "install.ps1 ok"

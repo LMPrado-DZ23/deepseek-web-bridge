@@ -13,12 +13,29 @@ export const LOG_DIR = path.join(ROOT, 'logs');
 
 const LOCALAPPDATA = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
 
+/**
+ * Perfil dedicado do navegador, por sistema operacional:
+ * - Windows: %LOCALAPPDATA%
+ * - macOS:   ~/Library/Application Support
+ * - Linux:   $XDG_DATA_HOME (ou ~/.local/share)
+ */
+export function defaultProfileDir() {
+  if (process.platform === 'win32') {
+    return path.join(LOCALAPPDATA, 'dsh-deepseek-web', 'chrome-profile');
+  }
+  if (process.platform === 'darwin') {
+    return path.join(os.homedir(), 'Library', 'Application Support', 'dsh-deepseek-web', 'chrome-profile');
+  }
+  const dataHome = process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share');
+  return path.join(dataHome, 'dsh-deepseek-web', 'chrome-profile');
+}
+
 export const DEFAULTS = {
   host: '127.0.0.1',
   port: 8787,
   chatUrl: 'https://chat.deepseek.com/',
   // Perfil dedicado do navegador: NAO usa o perfil pessoal do Chrome do usuario.
-  profileDir: path.join(LOCALAPPDATA, 'dsh-deepseek-web', 'chrome-profile'),
+  profileDir: defaultProfileDir(),
   browserChannel: 'chrome', // 'chrome' | 'msedge' | 'chromium'
   headless: true,
   navTimeoutMs: 60_000,

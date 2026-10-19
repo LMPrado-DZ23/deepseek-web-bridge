@@ -42,9 +42,14 @@
     "probe": "node src/index.mjs probe",
     "models": "node src/index.mjs models",
     "smoke": "node scripts/smoke-server.mjs",
+    "configure-dsh": "node scripts/configure-dsh.mjs",
+    "demo": "node scripts/make-demo.mjs",
     "test": "node --test"
   },
   "dependencies": {
     "playwright-core": "^1.49.0"
+  },
+  "devDependencies": {
+    "gifenc": "^1.0.3"
   }
 }
