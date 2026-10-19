@@ -80,6 +80,41 @@ Opções: Windows `-Profile`, `-Port`, `-NoLogin`, `-NoDsh`, `-DshHome`,
 | DSH | qualquer perfil com o plugin `@deepseek-ai/dsh-llm-pi-ai` (padrão) |
 | Sistema | Windows x64, macOS (Intel/Apple Silicon) ou Linux x64 |
 
+## Deixe a ponte sempre no ar
+
+O DSH **não inicia** a ponte por você. Se o processo não estiver rodando, o turno
+falha com `Connection error` / `TRANSPORT` (o DSH ainda repete 5 vezes).
+
+**Windows (recomendado):**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File autostart.ps1
+```
+
+Cria um atalho em `Iniciar` que sobe a ponte **sem janela** em cada login. O
+instalador também aceita `-AutoStart`. Para desfazer: `autostart.ps1 -Remove`.
+
+**macOS/Linux (systemd de usuário):**
+
+```ini
+# ~/.config/systemd/user/deepseek-web-bridge.service
+[Unit]
+Description=Ponte DeepSeek Web
+[Service]
+WorkingDirectory=%h/.local/share/deepseek-web-bridge
+ExecStart=/usr/bin/env node src/index.mjs serve
+Restart=on-failure
+[Install]
+WantedBy=default.target
+```
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now deepseek-web-bridge
+```
+
+Conferir a qualquer momento: `curl -s http://127.0.0.1:8787/health`.
+
 ## Usar
 
 1. Suba a ponte e **deixe a janela aberta**:

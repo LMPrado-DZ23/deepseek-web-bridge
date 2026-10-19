@@ -41,6 +41,7 @@ param(
   [int]$Port = 8787,
   [switch]$NoLogin,
   [switch]$NoDsh,
+  [switch]$AutoStart,
   [string]$InstallDir
 )
 
@@ -200,12 +201,25 @@ if ($NoDsh) {
   }
 }
 
-# ---------------------------------------------------------------- 7. resumo
+# ---------------------------------------------------------------- 7. autostart
+if ($AutoStart) {
+  $autoScript = Join-Path $InstallDir 'autostart.ps1'
+  if (Test-Path -LiteralPath $autoScript) {
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $autoScript -InstallDir $InstallDir
+    if ($LASTEXITCODE -eq 0) { Ok 'a ponte vai subir junto com o Windows (sem janela)' }
+    else { Warn 'nao consegui criar o autostart; rode autostart.ps1 manualmente' }
+  } else {
+    Warn "autostart.ps1 nao encontrado em $InstallDir"
+  }
+}
+
+# ---------------------------------------------------------------- 8. resumo
 Write-Host ''
 Ok 'instalacao concluida'
 Write-Host ''
 Write-Host 'Como usar:'
 Write-Host "  1. suba a ponte:   $(Join-Path $InstallDir 'start.cmd')"
+Write-Host "     (ou rode autostart.ps1 para ela subir junto com o Windows)"
 Write-Host "  2. reinicie o DSH e escolha o modelo 'DeepSeek Web (navegador)' ou 'DeepSeek Web Think'."
 Write-Host ''
 Write-Host 'Aviso: automatizar o chat.deepseek.com com a sua sessao pode contrariar os'

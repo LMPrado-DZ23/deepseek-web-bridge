@@ -1,6 +1,6 @@
 {
   "name": "deepseek-web-bridge",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Ponte local que expoe o chat.deepseek.com (sessao de navegador) como API OpenAI-compativel para o DeepSeek Harness.",
   "type": "module",
   "license": "MIT",

@@ -1,5 +1,23 @@
 # Problemas comuns
 
+## `Este turno falhou — Connection error` (`TRANSPORT`)
+
+O DSH não conseguiu falar com a ponte: **o processo da ponte não está rodando**
+(ou está em outra porta). O DSH repete algumas vezes e desiste.
+
+```powershell
+# conferir
+curl.exe -s http://127.0.0.1:8787/health
+
+# subir sem janela (Windows)
+powershell -ExecutionPolicy Bypass -File autostart.ps1   # cria o atalho de login
+wscript.exe start-hidden.vbs                            # sobe agora
+```
+
+Se o `health` responder, repita o turno no DSH. Para não acontecer de novo, deixe
+o autostart ligado (ou `install.ps1 -AutoStart`). O `start-hidden.vbs` não abre
+uma segunda instância se a ponte já estiver no ar.
+
 ## O DSH mostra `MISSING_CREDENTIAL` para a rota `deepseek-web`
 
 O DSH não achou o valor de `apiKeyEnv: DEEPSEEK_WEB_KEY`.

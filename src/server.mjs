@@ -13,7 +13,7 @@ import { log } from './log.mjs';
 // O parser avisa quando precisou interpretar a sintaxe DSML do site.
 setToolParserLogger((msg) => log.warn(msg));
 
-const VERSION = '0.1.2';
+const VERSION = '0.1.3';
 
 class SerialQueue {
   constructor(max) {
