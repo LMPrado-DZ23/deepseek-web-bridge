@@ -96,6 +96,27 @@ Opções: Windows `-Profile`, `-Port`, `-NoLogin`, `-NoDsh`, `-DshHome`,
 > A ponte precisa estar no ar antes do primeiro turno. O DSH não inicia
 > processos por você.
 
+## Capacidades (o que o modelo consegue fazer)
+
+O DSH executa as ferramentas; a ponte só precisa entregar a chamada certa. O que
+já foi **medido de ponta a ponta** (DSH → ponte → chat web → DSH):
+
+| capacidade | estado |
+| --- | --- |
+| conversa em texto e streaming | ✅ |
+| raciocínio (`reasoning_content` separado do texto) | ✅ |
+| executar shell (`pwsh`) e ler a saída | ✅ |
+| ler, escrever e reler arquivos (tarefa de vários passos) | ✅ |
+| **duas chamadas de ferramenta no mesmo turno** | ✅ (log `ferramentas=2`) |
+| ferramentas MCP do DSH (filesystem, GitHub, browser…) | ✅ pelo mesmo mecanismo |
+| subagentes, workflows, skills, `present`, `todo_write` | funcionam pelo mesmo caminho, mas **não validados ao vivo** aqui; cada subagente consome turnos web |
+| tool-calling **nativo** (function calling da API) | ❌ é protocolo de texto, best-effort |
+| imagens/anexos/visão | ❌ a ponte não envia anexos |
+| garantias de exatamente-uma-execução / ordem | ❌ best-effort (se o site mudar, a chamada pode se perder) |
+
+Os formatos aceitos de chamada são o bloco ```` ```tool_calls ```` e a sintaxe
+**DSML** do site; o trecho da chamada nunca vaza como texto no streaming.
+
 ## Como funciona
 
 ```
@@ -115,6 +136,11 @@ DSH ──HTTP──▶ 127.0.0.1:8787 (esta ponte) ──Playwright──▶ Ch
 - Um turno por vez (fila serial), o que evita duas abas se atropelando.
 - Cada turno é registrado no log: modelo, tamanho do prompt/resposta, raciocínio,
   ferramentas, origem do texto e tempo.
+- **Chamadas de ferramenta:** a ponte entende o bloco ```` ```tool_calls ```` e
+  também a sintaxe interna **DSML** que o site às vezes imita
+  (`<|DSML|invoke name="…">`), inclusive quando o markdown deforma os pipes
+  (`<| | DSML | | invoke…`). O trecho da chamada não vaza mais como texto no
+  streaming: vira `tool_calls` de verdade.
 
 ## Integração com o DSH
 
@@ -198,9 +224,10 @@ curl -s http://127.0.0.1:8787/v1/chat/completions \
 ## Limitações reais
 
 - **Sem tool-calling nativo.** A ponte injeta o catálogo de ferramentas no prompt
-  e interpreta um bloco ```` ```tool_calls ```` — funciona para MCP simples, mas
-  não tem a confiabilidade da API oficial. Para uso agente sério, prefira as
-  rotas oficiais `deepseek-account` / `deepseek-api-key` do DSH.
+  e interpreta o bloco ```` ```tool_calls ```` **ou a sintaxe DSML** que o site
+  imita — funciona para MCP simples, mas não tem a confiabilidade da API oficial.
+  Para uso agente sério, prefira as rotas oficiais `deepseek-account` /
+  `deepseek-api-key` do DSH.
 - Latência de segundos a dezenas de segundos por turno (é um navegador).
 - Depende do DOM do site: se o DeepSeek mudar o layout, rode `diagnose` e ajuste
   `src/selectors.json`.

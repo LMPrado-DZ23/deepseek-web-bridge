@@ -47,6 +47,9 @@ export const DEFAULTS = {
   maxQueue: 8,
   maxPromptChars: 380_000,
   toolProtocol: true,
+  // Catalogo compacto (nome + descricao curta + parametros essenciais): com 350+
+  // ferramentas o schema completo passa de 300k caracteres e domina o prompt.
+  toolCatalogCompact: true,
   logLevel: 'info',
   logFile: path.join(LOG_DIR, 'bridge.log'),
   // Token opcional: vazio = sem autenticacao (aceitavel porque escuta so em loopback).
@@ -109,6 +112,7 @@ export function loadConfig(opts = {}) {
   if (env.DSB_REQUEST_TIMEOUT_MS) cfg.requestTimeoutMs = int(env.DSB_REQUEST_TIMEOUT_MS, cfg.requestTimeoutMs);
   if (env.DSB_MAX_PROMPT_CHARS) cfg.maxPromptChars = int(env.DSB_MAX_PROMPT_CHARS, cfg.maxPromptChars);
   if (env.DSB_TOOL_PROTOCOL !== undefined) cfg.toolProtocol = bool(env.DSB_TOOL_PROTOCOL, cfg.toolProtocol);
+  if (env.DSB_TOOL_CATALOG) cfg.toolCatalogCompact = String(env.DSB_TOOL_CATALOG).trim().toLowerCase() !== 'full';
   if (env.DSB_LOG_LEVEL) cfg.logLevel = env.DSB_LOG_LEVEL;
   if (env.DSB_LOG_FILE) cfg.logFile = env.DSB_LOG_FILE;
   if (env.DSB_URL) cfg.chatUrl = env.DSB_URL;
@@ -126,6 +130,8 @@ export function loadConfig(opts = {}) {
     else if (a === '--browser') cfg.browserChannel = String(next());
     else if (a === '--timeout') cfg.requestTimeoutMs = int(next(), cfg.requestTimeoutMs);
     else if (a === '--no-tool-protocol') cfg.toolProtocol = false;
+    else if (a === '--tool-catalog') cfg.toolCatalogCompact = String(next()).toLowerCase() !== 'full';
+    else if (a === '--full-tool-catalog') cfg.toolCatalogCompact = false;
     else if (a === '--log-level') cfg.logLevel = String(next());
   }
 

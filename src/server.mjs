@@ -6,11 +6,14 @@
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { BridgeError, WebTransport } from './web.mjs';
-import { buildPrompt, parseToolCalls } from './prompt.mjs';
+import { buildPrompt, parseToolCalls, setToolParserLogger } from './prompt.mjs';
 import { modelById } from './config.mjs';
 import { log } from './log.mjs';
 
-const VERSION = '0.1.0';
+// O parser avisa quando precisou interpretar a sintaxe DSML do site.
+setToolParserLogger((msg) => log.warn(msg));
+
+const VERSION = '0.1.2';
 
 class SerialQueue {
   constructor(max) {
@@ -203,6 +206,7 @@ export class Bridge {
       maxChars: this.cfg.maxPromptChars,
       tools: body.tools,
       toolProtocol: this.cfg.toolProtocol,
+      toolCatalogCompact: this.cfg.toolCatalogCompact !== false,
     });
 
     const result = await this.queue.run(() =>
@@ -348,6 +352,8 @@ export class Bridge {
 
     try {
       this.touch();
+      let contenidoBuffer = '';
+      let suprimido = false;
       const turn = await this.turn(body, {
         signal: ac.signal,
         onThinking: (piece) => {
@@ -358,6 +364,18 @@ export class Bridge {
         },
         onDelta: (piece) => {
           if (!piece) return;
+          contenidoBuffer += piece;
+          // Se o site comecar a imitar a sintaxe DSML de ferramentas ou abrir um
+          // bloco ```tool_calls, segura o streaming: no fim isso vira tool_calls,
+          // nao texto na tela.
+          if (
+            !suprimido &&
+            (/<\s*\|?[\s|]*DSML/i.test(contenidoBuffer) || /```\s*(tool_calls|tool|json-tool)/i.test(contenidoBuffer))
+          ) {
+            suprimido = true;
+            log.debug(`stream: markup de ferramenta detectado; segurando conteudo (${contenidoBuffer.slice(0, 120)}...)`);
+          }
+          if (suprimido) return;
           sentChars += piece.length;
           ensureStream();
           writeEvent(chunk({ content: piece }));
@@ -366,6 +384,19 @@ export class Bridge {
       ensureStream();
       if (!turn.text && !turn.toolCalls.length && !turn.thinking) {
         throw new BridgeError('EMPTY_ANSWER', 'o modelo nao retornou texto');
+      }
+      if (!turn.toolCalls.length) {
+        // Completa o que sobrou: rede pode ter texto melhor que o DOM e um
+        // bloqueio de DSML pode ter segurado parte do buffer.
+        let restante = '';
+        if (turn.text && turn.text.startsWith(contenidoBuffer)) restante = turn.text.slice(contenidoBuffer.length);
+        else if (contenidoBuffer.length > sentChars) restante = contenidoBuffer.slice(sentChars);
+        else if (!sentChars && turn.text) restante = turn.text;
+        if (restante) {
+          sentChars += restante.length;
+          ensureStream();
+          writeEvent(chunk({ content: restante }));
+        }
       }
       if (turn.toolCalls.length) {
         for (let i = 0; i < turn.toolCalls.length; i++) {

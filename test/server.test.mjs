@@ -106,12 +106,13 @@ test('GET /v1/models anuncia os modelos configurados', async () => {
 });
 
 test('GET /health responde sem tocar no navegador', async () => {
+  const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
   await withServer(fakeTransport(), async ({ base }) => {
     const res = await fetch(`${base}/health`);
     assert.equal(res.status, 200);
     const json = await res.json();
     assert.equal(json.ok, true);
-    assert.equal(json.version, '0.1.0');
+    assert.equal(json.version, pkg.version);
     assert.equal(json.queue.max, 8);
     assert.ok(Array.isArray(json.models));
   });
@@ -208,6 +209,57 @@ test('tool_calls: tambem no modo nao-stream', async () => {
     const json = await res.json();
     assert.equal(json.choices[0].finish_reason, 'tool_calls');
     assert.equal(json.choices[0].message.tool_calls[0].function.name, 'get_weather');
+  });
+});
+
+test('tool_calls: sintaxe DSML deformada vira tool_calls e nao aparece no conteudo', async () => {
+  const dsml = [
+    '< | | DSML | | calls> < | | DSML | | invoke name="get_weather">',
+    '< | | DSML | | parameter name="city" string="true">Recife</ | | DSML | | parameter>',
+    '</ | | DSML | | invoke> </ | | DSML | | calls>',
+  ].join(' ');
+  const transport = fakeTransport({ text: dsml, chunks: [dsml] });
+  await withServer(transport, async ({ base }) => {
+    const res = await post(base, {
+      model: 'deepseek-web',
+      stream: true,
+      messages: [{ role: 'user', content: 'clima?' }],
+      tools: [weatherTool],
+    });
+    assert.equal(res.status, 200);
+    const events = parseSse(await res.text());
+    const callChunk = events.find((e) => !e.done && e.choices?.[0]?.delta?.tool_calls);
+    assert.ok(callChunk, 'deve emitir tool_calls a partir do DSML');
+    assert.equal(callChunk.choices[0].delta.tool_calls[0].function.name, 'get_weather');
+    const conteudo = events
+      .filter((e) => !e.done && typeof e.choices?.[0]?.delta?.content === 'string')
+      .map((e) => e.choices[0].delta.content)
+      .join('');
+    assert.doesNotMatch(conteudo, /DSML/, 'markup de ferramenta nao pode vazar como conteudo');
+    const finish = events.find((e) => !e.done && e.choices?.[0]?.finish_reason);
+    assert.equal(finish.choices[0].finish_reason, 'tool_calls');
+  });
+});
+
+test('tool_calls: bloco cercado nao vaza como conteudo no streaming', async () => {
+  const bloco = '```tool_calls\n{"calls":[{"name":"get_weather","arguments":{"city":"Natal"}}]}\n```';
+  const transport = fakeTransport({ text: bloco, chunks: [bloco.slice(0, 20), bloco.slice(20)] });
+  await withServer(transport, async ({ base }) => {
+    const res = await post(base, {
+      model: 'deepseek-web',
+      stream: true,
+      messages: [{ role: 'user', content: 'clima?' }],
+      tools: [weatherTool],
+    });
+    assert.equal(res.status, 200);
+    const events = parseSse(await res.text());
+    const conteudo = events
+      .filter((e) => !e.done && typeof e.choices?.[0]?.delta?.content === 'string')
+      .map((e) => e.choices[0].delta.content)
+      .join('');
+    assert.doesNotMatch(conteudo, /```|tool_calls/, 'bloco de ferramenta nao pode virar texto');
+    const callChunk = events.find((e) => !e.done && e.choices?.[0]?.delta?.tool_calls);
+    assert.ok(callChunk);
   });
 });
 

@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import {
   buildPrompt,
   contentToText,
+  normalizeDsml,
   normalizeMessages,
   parseToolCalls,
+  serializeTools,
   truncateBlocks,
   estimateTokens,
 } from '../src/prompt.mjs';
@@ -160,6 +162,112 @@ test('parseToolCalls: JSON invalido nao explode', () => {
   const { text, toolCalls } = parseToolCalls('```tool_calls\n{nao e json}\n```', [weatherTool]);
   assert.equal(toolCalls.length, 0);
   assert.match(text, /nao e json/);
+});
+
+// O chat web imita a sintaxe interna DSML do DeepSeek e o markdown do site
+// deforma os pipes com espacos. Amostra real capturada no DSH.
+const dsmlMangled = `< | | DSML | | calls> < | | DSML | | invoke name="pwsh"> < | | DSML | | parameter name="command" string="true">Get-Location; Get-ChildItem -Force | Select-Object Mode,LastWriteTime,Length,Name | Format-Table -AutoSize</ | | DSML | | parameter> < | | DSML | | parameter name="description" string="true">Show working directory and contents</ | | DSML | | parameter> </ | | DSML | | invoke> </ | | DSML | | calls>`;
+const pwshTool = { type: 'function', function: { name: 'pwsh', description: 'shell', parameters: { type: 'object' } } };
+
+test('normalizeDsml: restaura os pipes deformados pelo markdown', () => {
+  const saida = normalizeDsml(dsmlMangled);
+  assert.match(saida, /<\|DSML\|calls>/);
+  assert.match(saida, /<\|DSML\|invoke name="pwsh">/);
+  assert.match(saida, /<\/\|DSML\|invoke>/);
+  assert.doesNotMatch(saida, /\| \| DSML/);
+});
+
+test('parseToolCalls: DSML deformado vira tool_calls com argumentos string', () => {
+  const { text, toolCalls } = parseToolCalls(dsmlMangled, [pwshTool]);
+  assert.equal(toolCalls.length, 1);
+  assert.equal(toolCalls[0].function.name, 'pwsh');
+  const args = JSON.parse(toolCalls[0].function.arguments);
+  assert.match(args.command, /Get-Location/);
+  assert.match(args.command, /Select-Object/);
+  assert.equal(args.description, 'Show working directory and contents');
+  assert.doesNotMatch(text, /DSML/);
+});
+
+test('parseToolCalls: varios invokes DSML e parametro JSON', () => {
+  const raw = [
+    '<|DSML|calls>',
+    '<|DSML|invoke name="pwsh">',
+    '<|DSML|parameter name="command" string="true">echo 1</|DSML|parameter>',
+    '</|DSML|invoke>',
+    '<|DSML|invoke name="get_weather">',
+    '<|DSML|parameter name="city" string="true">Recife</|DSML|parameter>',
+    '<|DSML|parameter name="dias">3</|DSML|parameter>',
+    '</|DSML|invoke>',
+    '</|DSML|calls>',
+  ].join('\n');
+  const { toolCalls } = parseToolCalls(raw, [pwshTool, weatherTool]);
+  assert.equal(toolCalls.length, 2);
+  assert.equal(toolCalls[0].function.name, 'pwsh');
+  const clima = toolCalls.find((c) => c.function.name === 'get_weather');
+  assert.deepEqual(JSON.parse(clima.function.arguments), { city: 'Recife', dias: 3 });
+});
+
+test('parseToolCalls: DSML com ferramenta desconhecida e ignorado', () => {
+  const raw = '<|DSML|calls><|DSML|invoke name="rm_rf"><|DSML|parameter name="p" string="true">/</|DSML|parameter></|DSML|invoke></|DSML|calls>';
+  const { toolCalls } = parseToolCalls(raw, [weatherTool]);
+  assert.equal(toolCalls.length, 0);
+});
+
+test('parseToolCalls: bloco cercado tem prioridade sobre DSML', () => {
+  const raw = '```tool_calls\n{"calls":[{"name":"get_weather","arguments":{"city":"Recife"}}]}\n```';
+  const { toolCalls } = parseToolCalls(raw + '\n' + dsmlMangled, [weatherTool, pwshTool]);
+  assert.equal(toolCalls.length, 1);
+  assert.equal(toolCalls[0].function.name, 'get_weather');
+});
+
+test('serializeTools: modo compacto reduz o catalogo sem perder o essencial', () => {
+  const tool = {
+    type: 'function',
+    function: {
+      name: 'pwsh',
+      description: 'd'.repeat(500),
+      parameters: {
+        type: 'object',
+        properties: {
+          command: { type: 'string', description: 'e'.repeat(300) },
+          timeout: { type: 'number' },
+        },
+        required: ['command'],
+      },
+    },
+  };
+  const compacto = serializeTools([tool], { compact: true });
+  const cheio = serializeTools([tool], { compact: false });
+  assert.ok(compacto.length * 2 < cheio.length, 'compacto precisa ser bem menor');
+  const [fn] = JSON.parse(compacto);
+  assert.equal(fn.name, 'pwsh');
+  assert.deepEqual(fn.parameters.required, ['command']);
+  assert.equal(fn.parameters.properties.command.type, 'string');
+  assert.equal(fn.parameters.properties.timeout.type, 'number');
+  assert.doesNotMatch(compacto, /eeee/, 'descricao de parametro nao vai no compacto');
+  assert.match(cheio, /eeee/);
+});
+
+test('buildPrompt: toolCatalogCompact=false injeta o schema completo', () => {
+  const grande = {
+    type: 'function',
+    function: {
+      name: 'get_weather',
+      description: 'Consulta clima ' + 'd'.repeat(400),
+      parameters: {
+        type: 'object',
+        properties: { city: { type: 'string', description: 'e'.repeat(300) } },
+        required: ['city'],
+      },
+    },
+  };
+  const mensagens = [{ role: 'user', content: 'use a ferramenta' }];
+  const compacto = buildPrompt(mensagens, { tools: [grande], toolProtocol: true }).prompt;
+  const completo = buildPrompt(mensagens, { tools: [grande], toolProtocol: true, toolCatalogCompact: false }).prompt;
+  assert.ok(compacto.length < completo.length);
+  assert.match(compacto, /get_weather/);
+  assert.doesNotMatch(compacto, /eeee/);
+  assert.match(completo, /eeee/);
 });
 
 test('estimateTokens: proporcional ao tamanho', () => {
