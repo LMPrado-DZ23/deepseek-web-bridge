@@ -1,0 +1,8 @@
+node_modules/
+logs/
+data/*
+!data/README.md
+*.log
+.env
+.DS_Store
+Thumbs.db

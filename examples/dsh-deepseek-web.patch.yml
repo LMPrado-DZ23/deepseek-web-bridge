@@ -1,0 +1,45 @@
+# Trecho para o perfil do DSH
+
+Cole no `cordis.patch.yml` do perfil (o instalador faz isso automaticamente).
+Entrada `- id:` simples: o DSH faz merge desta config sobre o `llm-pi-ai` que já
+existe no perfil base.
+
+```yaml
+- id: llm-pi-ai
+  name: '@deepseek-ai/dsh-llm-pi-ai'
+  config:
+    providers:
+      deepseek-web:
+        displayName: DeepSeek Web (navegador)
+        api: openai-completions
+        apiKeyEnv: DEEPSEEK_WEB_KEY
+        baseURL: http://127.0.0.1:8787/v1
+        defaultContextWindow: 131072
+        defaultMaxTokens: 8192
+        models:
+          - id: deepseek-web
+            name: DeepSeek Web (chat no site)
+            contextWindow: 131072
+            maxTokens: 8192
+          - id: deepseek-web-think
+            name: DeepSeek Web Think (raciocinio no site)
+            contextWindow: 131072
+            maxTokens: 32768
+        compat:
+          supportsDeveloperRole: false
+          supportsUsageInStreaming: false
+```
+
+Credencial de referência (cofre, não `.env`):
+
+```yaml
+# ~/.dsh/.credentials.yaml
+version: 1
+
+refs:
+  DEEPSEEK_WEB_KEY: ponte-local-sem-chave
+
+records: {}
+```
+
+Se a ponte estiver em outra porta, ajuste `baseURL`.

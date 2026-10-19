@@ -1,0 +1,50 @@
+{
+  "name": "deepseek-web-bridge",
+  "version": "0.1.0",
+  "description": "Ponte local que expoe o chat.deepseek.com (sessao de navegador) como API OpenAI-compativel para o DeepSeek Harness.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Leandro Prado (LMPrado-DZ23)",
+  "homepage": "https://github.com/LMPrado-DZ23/deepseek-web-bridge#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LMPrado-DZ23/deepseek-web-bridge.git"
+  },
+  "bugs": {
+    "url": "https://github.com/LMPrado-DZ23/deepseek-web-bridge/issues"
+  },
+  "keywords": [
+    "deepseek",
+    "deepseek-harness",
+    "dsh",
+    "openai-compatible",
+    "browser-bridge",
+    "playwright",
+    "chat.deepseek.com"
+  ],
+  "bin": {
+    "deepseek-web-bridge": "src/index.mjs"
+  },
+  "files": [
+    "src/",
+    "examples/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "start": "node src/index.mjs serve",
+    "login": "node src/index.mjs login",
+    "verify": "node src/index.mjs verify",
+    "diagnose": "node src/index.mjs diagnose",
+    "probe": "node src/index.mjs probe",
+    "models": "node src/index.mjs models",
+    "smoke": "node scripts/smoke-server.mjs",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "playwright-core": "^1.49.0"
+  }
+}

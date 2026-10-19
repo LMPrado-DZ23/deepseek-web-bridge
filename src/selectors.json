@@ -1,0 +1,59 @@
+{
+  "_comentario": "Candidatos em ordem de preferencia: o primeiro que casar com >=1 elemento visivel vence. Medido no chat.deepseek.com em 2026-10-19 (DOM real, sessao logada). Nao usar pseudo-classes do Playwright em listas lidas por querySelectorAll (assistantMessage, thinkingBlock) - apenas CSS puro.",
+  "_medido": {
+    "composer": "textarea[placeholder] (placeholder 'Mensagem para DeepSeek'); nao existe #chat-input",
+    "sendButton": "div.ds-button--circle (o site nao usa <button>; fica com --disabled apos terminar)",
+    "assistantMessage": ".ds-markdown (streaming progressivo, innerText confiavel)",
+    "message": ".ds-message",
+    "toggles": "div.ds-toggle-button + aria-pressed / classe ds-toggle-button--selected; texto interno em span",
+    "thinkingBlock": ".ds-think-content"
+  },
+  "composer": [
+    "textarea[placeholder]",
+    "textarea",
+    "div[contenteditable='true']"
+  ],
+  "sendButton": [
+    "div.ds-button--circle",
+    "div[class*='ds-button--circle']"
+  ],
+  "stopButton": [],
+  "assistantMessage": [
+    ".ds-markdown",
+    "div[class*='ds-markdown']",
+    "div[class*='markdown']"
+  ],
+  "thinkingBlock": [
+    ".ds-think-content",
+    "div[class*='ds-think-content']",
+    "div[class*='think-content']"
+  ],
+  "message": [
+    ".ds-message"
+  ],
+  "newChat": [
+    "div[role='button'][aria-label*='Novo']",
+    "a[href='/']"
+  ],
+  "deepThinkToggle": [
+    "div.ds-toggle-button:has-text('Pensamento')",
+    "div.ds-toggle-button:has-text('Racioc')",
+    "div.ds-toggle-button:has-text('Pensar')",
+    "div.ds-toggle-button:has-text('DeepThink')"
+  ],
+  "searchToggle": [
+    "div.ds-toggle-button:has-text('Pesquisa')",
+    "div.ds-toggle-button:has-text('Busca')",
+    "div.ds-toggle-button:has-text('Search')"
+  ],
+  "loginIndicator": [
+    "textarea[placeholder]",
+    "textarea",
+    "div[contenteditable='true']"
+  ],
+  "challengeHints": [
+    "iframe[src*='captcha']",
+    "div[class*='captcha']",
+    "div[class*='verify']"
+  ]
+}

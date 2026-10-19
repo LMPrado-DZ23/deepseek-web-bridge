@@ -1,0 +1,244 @@
+# DeepSeek Web Bridge
+
+**Use o `chat.deepseek.com` como um modelo dentro do DeepSeek Harness (DSH) — sem chave de API.**
+
+Uma ponte local (loopback) que conversa com a interface web do DeepSeek em um
+Chrome dedicado e a expõe como um provider **compatível com a API da OpenAI**
+(`/v1/models` + `/v1/chat/completions`, com streaming).
+
+É a mesma ideia do [`codex-chatgpt-web`](https://github.com/miuuyy/codex-chatgpt-web),
+adaptada para o **DeepSeek Harness**: em vez de fingir ser o app do Codex, a
+ponte se registra como mais uma rota do plugin `@deepseek-ai/dsh-llm-pi-ai`.
+
+![status](https://img.shields.io/badge/status-funcional-brightgreen)
+![license](https://img.shields.io/badge/license-MIT-blue)
+![platform](https://img.shields.io/badge/platform-Windows%20x64-lightgrey)
+![node](https://img.shields.io/badge/node-%3E%3D20-informational)
+
+---
+
+## Instalação em um comando (Windows)
+
+Abra o PowerShell e rode:
+
+```powershell
+irm https://raw.githubusercontent.com/LMPrado-DZ23/deepseek-web-bridge/main/install.ps1 | iex
+```
+
+O instalador:
+
+1. confere **Node.js 20+** e o **Google Chrome**;
+2. baixa o projeto em `%LOCALAPPDATA%\deepseek-web-bridge` e instala as
+   dependências (`playwright-core`);
+3. abre o **Chrome normal** para o login único no `chat.deepseek.com`
+   (Google/Apple funcionam nessa janela);
+4. registra o provider `deepseek-web` no perfil do DSH e grava a credencial de
+   referência `DEEPSEEK_WEB_KEY` no cofre local.
+
+Se preferir clonar:
+
+```powershell
+git clone https://github.com/LMPrado-DZ23/deepseek-web-bridge
+cd deepseek-web-bridge
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+Opções úteis: `-Profile headless`, `-Port 8787`, `-NoLogin`, `-NoDsh`,
+`-DshHome <pasta>`, `-InstallDir <pasta>`.
+
+## Usar
+
+1. Suba a ponte e **deixe a janela aberta**:
+
+   ```powershell
+   .\start.cmd
+   ```
+
+2. **Reinicie o DSH.** No seletor de modelos aparecem:
+   - **DeepSeek Web (navegador)** — resposta rápida, tipo chat;
+   - **DeepSeek Web Think (raciocínio no site)** — liga o "Pensamento Profundo".
+
+> A ponte precisa estar no ar antes do primeiro turno. O DSH não inicia
+> processos por você.
+
+## Como funciona
+
+```
+DSH ──HTTP──▶ 127.0.0.1:8787 (esta ponte) ──Playwright──▶ Chrome dedicado
+              /v1/models                                  chat.deepseek.com
+              /v1/chat/completions                        (sessão persistida)
+```
+
+- A conversa é achatada em um prompt único e enviada em um **chat novo** no site.
+- A resposta é lida do **corpo SSE** de `/api/v0/chat/completion` (autoritativo),
+  com fallback no DOM.
+- Fragmentos `THINK` viram `reasoning_content`; fragmentos `RESPONSE` viram
+  `content`. **Os dois nunca se misturam.**
+- A cada turno os botões medidos são ajustados: "Pensamento Profundo" conforme o
+  modelo e **"Pesquisa inteligente" sempre desligada** (vinha ligada por padrão e
+  adiciona latência).
+- Um turno por vez (fila serial), o que evita duas abas se atropelando.
+
+## Integração com o DSH
+
+O instalador faz isso; se quiser conferir ou fazer à mão:
+
+```yaml
+# ~/.dsh/profiles/desktop/cordis.patch.yml
+- id: llm-pi-ai
+  name: '@deepseek-ai/dsh-llm-pi-ai'
+  config:
+    providers:
+      deepseek-web:
+        displayName: DeepSeek Web (navegador)
+        api: openai-completions
+        apiKeyEnv: DEEPSEEK_WEB_KEY
+        baseURL: http://127.0.0.1:8787/v1
+        defaultContextWindow: 131072
+        defaultMaxTokens: 8192
+        models:
+          - id: deepseek-web
+            name: DeepSeek Web (chat no site)
+            contextWindow: 131072
+            maxTokens: 8192
+          - id: deepseek-web-think
+            name: DeepSeek Web Think (raciocinio no site)
+            contextWindow: 131072
+            maxTokens: 32768
+        compat:
+          supportsDeveloperRole: false
+          supportsUsageInStreaming: false
+```
+
+A credencial é só um marcador (a ponte ignora o header `Authorization`) e mora
+no cofre do harness, **não** no `.env`:
+
+```yaml
+# ~/.dsh/.credentials.yaml
+version: 1
+
+refs:
+  DEEPSEEK_WEB_KEY: ponte-local-sem-chave
+
+records: {}
+```
+
+O app desktop **não** lê `%DSH_HOME%\.env` para `apiKeyEnv`; se o valor estiver
+só lá, o turno falha com `MISSING_CREDENTIAL`.
+
+Arquivo pronto para colar: [`examples/dsh-deepseek-web.patch.yml`](examples/dsh-deepseek-web.patch.yml).
+
+## Endpoints
+
+| rota | descrição |
+| --- | --- |
+| `GET /health` | estado da ponte (`?deep=1` confere o login no site) |
+| `GET /v1/models` | catálogo compatível com OpenAI |
+| `POST /v1/chat/completions` | chat, com `stream: true` ou `false` |
+
+```powershell
+$body = @{
+  model = 'deepseek-web'
+  messages = @(@{ role = 'user'; content = 'Responda apenas: ok' })
+} | ConvertTo-Json -Depth 5
+
+Invoke-RestMethod http://127.0.0.1:8787/v1/chat/completions `
+  -Method Post -ContentType 'application/json' -Body $body
+```
+
+## Comandos
+
+| comando | para que serve |
+| --- | --- |
+| `install.cmd` / `install.ps1` | instalação completa (deps + login + DSH) |
+| `start.cmd` | sobe o servidor local (`--port`, `--headed`, `--log-level debug`) |
+| `login.cmd` | login único no Chrome normal; `--auto` usa o Chrome automatizado |
+| `verify --wait` | espera a janela de login fechar e confere a sessão |
+| `diagnose --headed` | mede a página e mostra seletores OK/faltando |
+| `probe "texto" --mode think` | testa um turno direto no site, sem DSH |
+| `models` | lista modelos e o total de seletores DOM |
+| `npm test` | testes de unidade (parser do SSE, fila, prompt, servidor) |
+
+## Limitações reais
+
+- **Sem tool-calling nativo.** A ponte injeta o catálogo de ferramentas no prompt
+  e interpreta um bloco ```` ```tool_calls ```` — funciona para MCP simples, mas
+  não tem a confiabilidade da API oficial. Para uso agente sério, prefira as
+  rotas oficiais `deepseek-account` / `deepseek-api-key` do DSH.
+- Latência de segundos a dezenas de segundos por turno (é um navegador).
+- Depende do DOM do site: se o DeepSeek mudar o layout, rode `diagnose` e ajuste
+  `src/selectors.json`.
+- A sessão expira de vez em quando: rode `login.cmd` de novo.
+- Pode haver desafio anti-bot (PoW/WAF); nesse caso a resposta vem como
+  `CHALLENGE`.
+- Windows x64 é a plataforma testada; o caminho de login nativo usa PowerShell.
+
+## Aviso de uso
+
+Automatizar o `chat.deepseek.com` com a sua própria sessão **pode contrariar os
+Termos de Uso** do serviço e existe risco de restrição da conta. Use por sua
+conta e risco. Para uso profissional, a rota oficial autenticada do DSH é a
+indicada.
+
+## Segurança
+
+- Escuta apenas em `127.0.0.1` (loopback).
+- Sem token por padrão; defina `DSB_TOKEN` para exigir
+  `Authorization: Bearer <token>`.
+- O perfil do Chrome guarda os cookies da sua conta em
+  `%LOCALAPPDATA%\dsh-deepseek-web\chrome-profile` — não copie essa pasta.
+- A ponte não lê nenhuma credencial do DSH; `DEEPSEEK_WEB_KEY` é um marcador.
+
+Detalhes em [`SECURITY.md`](SECURITY.md).
+
+## Problemas comuns
+
+- `MISSING_CREDENTIAL` → falta a referência no cofre (`refs:` do
+  `.credentials.yaml`) ou o provider está sem `apiKeyEnv`.
+- `Target page, context or browser has been closed` / Chrome `exit 21` → outro
+  Chrome está usando o perfil da ponte; feche-o.
+- `COMPOSER_NOT_FOUND` / `site_layout_changed` → o layout mudou: rode
+  `node src/index.mjs diagnose --headed` e atualize `src/selectors.json`.
+- Login do Google recusado → use `login.cmd` (Chrome normal), **nunca** o modo
+  `--auto` para SSO.
+
+Mais em [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
+
+## Estrutura
+
+```
+src/        servidor HTTP, transporte Playwright, parser do SSE, prompt, config
+test/       testes de unidade (node --test)
+scripts/    diagnóstico: smoke do servidor, modos, stream, login, DOM
+examples/   trecho de perfil do DSH
+docs/       arquitetura
+install.ps1 instalador (deps + login + integração com o DSH)
+start.cmd   sobe a ponte
+login.cmd   login único no Chrome normal
+```
+
+## Desenvolvimento
+
+```powershell
+npm install
+npm test                 # 48 testes
+node scripts/smoke-server.mjs   # sobe a ponte, faz um turno real e derruba
+```
+
+Requisitos: Node 20+, Chrome instalado, sessão válida no `chat.deepseek.com`.
+As capturas reais de SSE usadas como oráculo estão em `data/sse-*.txt`
+(não versionadas por conterem conversa; veja `data/README.md`).
+
+## Diferenças em relação ao `codex-chatgpt-web`
+
+| | codex-chatgpt-web | este projeto |
+| --- | --- | --- |
+| alvo | ChatGPT web no Codex | DeepSeek web no DeepSeek Harness |
+| transporte | proxy Responses API + daemon Electron | servidor HTTP + Playwright (`playwright-core`) |
+| integração | catálogo do Codex / MCP | provider OpenAI-compatible do DSH |
+| token de API | não usa | não usa (marcador local) |
+| tool-calling | protocolo próprio | protocolo de texto (mesma ideia, mais simples) |
+
+## Licença
+
+MIT — veja [`LICENSE`](LICENSE).

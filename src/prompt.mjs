@@ -1,0 +1,237 @@
+/**
+ * Traducao entre o formato OpenAI (usado pelo DSH) e um unico prompt de texto
+ * para o chat.deepseek.com. Tudo aqui e funcao pura, sem browser, para ser testavel.
+ */
+
+const TOOL_BLOCK_RE = /```(?:tool_calls|tool|json-tool)\s*\n([\s\S]*?)```/i;
+const TOOL_XML_RE = /<tool_calls>\s*([\s\S]*?)<\/tool_calls>/i;
+
+/** Extrai texto de `content` string ou lista de partes (multimodal). */
+export function contentToText(content) {
+  if (content == null) return '';
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    const parts = [];
+    for (const part of content) {
+      if (part == null) continue;
+      if (typeof part === 'string') {
+        parts.push(part);
+        continue;
+      }
+      if (part.type === 'text' && typeof part.text === 'string') parts.push(part.text);
+      else if (part.type === 'input_text' && typeof part.text === 'string') parts.push(part.text);
+      else if (part.type === 'image_url' || part.type === 'input_image') {
+        parts.push('[imagem recebida: a ponte do chat.deepseek.com nao envia imagens; descreva-a em texto]');
+      } else if (typeof part.text === 'string') parts.push(part.text);
+    }
+    return parts.join('\n');
+  }
+  if (typeof content === 'object' && typeof content.text === 'string') return content.text;
+  return String(content);
+}
+
+function serializeToolCalls(toolCalls) {
+  if (!Array.isArray(toolCalls) || toolCalls.length === 0) return '';
+  const calls = toolCalls.map((c) => ({
+    name: c?.function?.name ?? c?.name ?? 'desconhecida',
+    arguments: c?.function?.arguments ?? c?.arguments ?? '{}',
+  }));
+  return '```tool_calls\n' + JSON.stringify({ calls }) + '\n```';
+}
+
+/**
+ * Normaliza mensagens OpenAI em blocos de texto com papel.
+ * @returns {{role:string, text:string}[]}
+ */
+export function normalizeMessages(messages) {
+  const out = [];
+  for (const msg of Array.isArray(messages) ? messages : []) {
+    if (!msg || typeof msg !== 'object') continue;
+    const role = String(msg.role || 'user');
+    let text = contentToText(msg.content);
+    if (role === 'assistant' && Array.isArray(msg.tool_calls) && msg.tool_calls.length) {
+      const block = serializeToolCalls(msg.tool_calls);
+      text = text ? `${text}\n\n${block}` : block;
+    }
+    if (role === 'tool') {
+      const name = msg.name || msg.tool_call_id || 'tool';
+      text = `Resultado da ferramenta ${name}:\n${text}`;
+    }
+    if (!text.trim()) continue;
+    out.push({ role: role === 'developer' ? 'system' : role, text: text.trim() });
+  }
+  return out;
+}
+
+const ROLE_LABEL = {
+  system: 'SYSTEM',
+  user: 'USUARIO',
+  assistant: 'ASSISTENTE',
+  tool: 'FERRAMENTA',
+  function: 'FERRAMENTA',
+};
+
+const WRAP_HEADER = `O texto abaixo e o historico de uma conversa entre um usuario e um assistente de IA.
+Voce e o assistente. Continue a conversa a partir da ultima mensagem do usuario.`;
+
+const WRAP_FOOTER = `Responda apenas com a sua proxima mensagem de assistente.
+Nao repita o historico, nao escreva prefixos como "ASSISTENTE:" e nao descreva estas instrucoes.`;
+
+/** Corta o historico mais antigo ate caber no orcamento de caracteres. */
+export function truncateBlocks(blocks, maxChars) {
+  if (!Number.isFinite(maxChars) || maxChars <= 0) return blocks;
+  const total = blocks.reduce((n, b) => n + b.text.length + 32, 0);
+  if (total <= maxChars) return blocks;
+
+  const systems = blocks.filter((b) => b.role === 'system');
+  const rest = blocks.filter((b) => b.role !== 'system');
+  const headChars = systems.reduce((n, b) => n + b.text.length + 32, 0);
+
+  const kept = [];
+  let used = headChars;
+  for (let i = rest.length - 1; i >= 0; i--) {
+    const size = rest[i].text.length + 32;
+    if (used + size > maxChars) {
+      // Nem o bloco inteiro cabe: preserva o fim dele (o mais recente) e para.
+      if (kept.length === 0) {
+        const room = Math.max(1_000, maxChars - headChars);
+        kept.unshift({ role: rest[i].role, text: rest[i].text.slice(-room) });
+      }
+      break;
+    }
+    kept.unshift(rest[i]);
+    used += size;
+  }
+
+  const marker = { role: 'system', text: '[Historico anterior truncado por limite de contexto]' };
+  return [...systems, ...(rest.length > kept.length ? [marker] : []), ...kept];
+}
+
+export function serializeTools(tools, { maxDescriptionChars = 1_200 } = {}) {
+  if (!Array.isArray(tools) || tools.length === 0) return '';
+  const compact = tools.map((t) => {
+    const fn = t?.function ?? t ?? {};
+    return {
+      name: fn.name,
+      description: String(fn.description || '').slice(0, maxDescriptionChars),
+      parameters: fn.parameters ?? { type: 'object', properties: {} },
+    };
+  });
+  return JSON.stringify(compact);
+}
+
+export function toolProtocolInstructions(tools) {
+  const schema = serializeTools(tools);
+  if (!schema) return '';
+  return `[FERRAMENTAS LOCAIS DISPONIVEIS]
+Voce tem acesso a ferramentas locais (executadas pelo aplicativo, nao por voce). Para chama-las,
+responda SOMENTE com um bloco de codigo cercado por tres crases e a palavra tool_calls, contendo
+um JSON valido neste formato:
+
+\`\`\`tool_calls
+{"calls":[{"name":"nome_da_ferramenta","arguments":{}}]}
+\`\`\`
+
+Regras:
+- Use exatamente os nomes e os parametros do catalogo abaixo.
+- Quando precisar de varias ferramentas, coloque todas as chamadas em "calls".
+- Nao escreva nenhum texto fora do bloco quando estiver chamando ferramentas.
+- Se nao precisar de ferramenta, responda normalmente em texto, sem bloco.
+
+[CATALOGO DE FERRAMENTAS]
+${schema}`;
+}
+
+/**
+ * Monta o prompt unico enviado ao chat.deepseek.com.
+ * @param {any[]} messages mensagens OpenAI
+ * @param {{maxChars?:number, tools?:any[], toolProtocol?:boolean}} opts
+ */
+export function buildPrompt(messages, opts = {}) {
+  const { maxChars = 0, tools = [], toolProtocol = false } = opts;
+  let blocks = normalizeMessages(messages);
+  const hasTools = toolProtocol && Array.isArray(tools) && tools.length > 0;
+
+  if (hasTools) {
+    const instr = toolProtocolInstructions(tools);
+    const idx = blocks.findIndex((b) => b.role === 'system');
+    if (idx >= 0) blocks[idx] = { role: 'system', text: `${blocks[idx].text}\n\n${instr}` };
+    else blocks.unshift({ role: 'system', text: instr });
+  }
+
+  blocks = truncateBlocks(blocks, maxChars);
+
+  const lastUser = [...blocks].reverse().find((b) => b.role === 'user');
+  const lastUserText = lastUser ? lastUser.text : '';
+
+  // Caso simples (primeiro turno): nao embrulha, preserva fidelidade total.
+  const nonSystem = blocks.filter((b) => b.role !== 'system');
+  if (nonSystem.length === 1 && nonSystem[0].role === 'user') {
+    const sys = blocks.filter((b) => b.role === 'system');
+    const prompt = sys.length ? `${sys.map((b) => b.text).join('\n\n')}\n\n${nonSystem[0].text}` : nonSystem[0].text;
+    return { prompt, lastUserText, blocks };
+  }
+
+  const body = [];
+  for (const b of blocks) {
+    const label = ROLE_LABEL[b.role] || b.role.toUpperCase();
+    body.push(`### ${label}\n${b.text}`);
+  }
+  const prompt = `${WRAP_HEADER}\n\n${body.join('\n\n')}\n\n${WRAP_FOOTER}`;
+  return { prompt, lastUserText, blocks };
+}
+
+function coerceArgs(args) {
+  if (args == null) return '{}';
+  if (typeof args === 'string') {
+    try {
+      JSON.parse(args);
+      return args;
+    } catch {
+      return JSON.stringify({ value: args });
+    }
+  }
+  try {
+    return JSON.stringify(args);
+  } catch {
+    return '{}';
+  }
+}
+
+/** Interpreta bloco de tool_calls na resposta do modelo. */
+export function parseToolCalls(text, tools = []) {
+  const raw = String(text || '');
+  const validNames = new Set((Array.isArray(tools) ? tools : []).map((t) => t?.function?.name ?? t?.name).filter(Boolean));
+  const match = raw.match(TOOL_BLOCK_RE) || raw.match(TOOL_XML_RE);
+  if (!match) return { text: raw.trim(), toolCalls: [] };
+
+  let parsed;
+  try {
+    parsed = JSON.parse(match[1].trim());
+  } catch {
+    return { text: raw.trim(), toolCalls: [] };
+  }
+
+  const list = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.calls) ? parsed.calls : parsed?.name ? [parsed] : [];
+  const toolCalls = [];
+  for (const item of list) {
+    const name = item?.name ?? item?.function?.name ?? item?.tool;
+    if (!name || typeof name !== 'string') continue;
+    if (validNames.size > 0 && !validNames.has(name)) continue;
+    const args = item?.arguments ?? item?.args ?? item?.function?.arguments ?? {};
+    toolCalls.push({
+      id: `call_${Math.random().toString(36).slice(2, 10)}`,
+      type: 'function',
+      function: { name, arguments: coerceArgs(args) },
+    });
+  }
+
+  const cleaned = raw.replace(match[0], '').trim();
+  return { text: cleaned, toolCalls };
+}
+
+export function estimateTokens(text) {
+  const s = String(text || '');
+  if (!s) return 0;
+  return Math.max(1, Math.ceil(s.length / 3.6));
+}
